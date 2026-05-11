@@ -278,6 +278,46 @@ fn getReposByYear(
         \\          }
         \\        }
         \\      }
+        \\      pullRequestContributionsByRepository(maxRepositories: 100) {
+        \\        repository {
+        \\          nameWithOwner
+        \\          stargazerCount
+        \\          forkCount
+        \\          isPrivate
+        \\          languages(
+        \\              first: 100,
+        \\              orderBy: { direction: DESC, field: SIZE }
+        \\          ) {
+        \\            edges {
+        \\              size
+        \\              node {
+        \\                name
+        \\                color
+        \\              }
+        \\            }
+        \\          }
+        \\        }
+        \\      }
+        \\      issueContributionsByRepository(maxRepositories: 100) {
+        \\        repository {
+        \\          nameWithOwner
+        \\          stargazerCount
+        \\          forkCount
+        \\          isPrivate
+        \\          languages(
+        \\              first: 100,
+        \\              orderBy: { direction: DESC, field: SIZE }
+        \\          ) {
+        \\            edges {
+        \\              size
+        \\              node {
+        \\                name
+        \\                color
+        \\              }
+        \\            }
+        \\          }
+        \\        }
+        \\      }
         \\    }
         \\  }
         \\}
@@ -331,6 +371,40 @@ fn getReposByYear(
                         },
                     },
                 },
+                pullRequestContributionsByRepository: []struct {
+                    repository: struct {
+                        nameWithOwner: []const u8,
+                        stargazerCount: u32,
+                        forkCount: u32,
+                        isPrivate: bool,
+                        languages: ?struct {
+                            edges: ?[]struct {
+                                size: u32,
+                                node: struct {
+                                    name: []const u8,
+                                    color: ?[]const u8,
+                                },
+                            },
+                        },
+                    },
+                },
+                issueContributionsByRepository: []struct {
+                    repository: struct {
+                        nameWithOwner: []const u8,
+                        stargazerCount: u32,
+                        forkCount: u32,
+                        isPrivate: bool,
+                        languages: ?struct {
+                            edges: ?[]struct {
+                                size: u32,
+                                node: struct {
+                                    name: []const u8,
+                                    color: ?[]const u8,
+                                },
+                            },
+                        },
+                    },
+                },
             },
         } } },
         context.arena.allocator(),
@@ -348,7 +422,10 @@ fn getReposByYear(
     // by increasingly large prime factors of 12. If it cannot divide by any
     // prime factors of 12, the size of the range is 1. In that case, it emits a
     // warning and proceeds with processing the data.
-    if (stats.commitContributionsByRepository.len >= limit) {
+    if (stats.commitContributionsByRepository.len >= limit or
+        stats.pullRequestContributionsByRepository.len >= limit or
+        stats.issueContributionsByRepository.len >= limit)
+    {
         for (&[_]usize{ 2, 3 }) |factor| {
             if (months % factor == 0) {
                 for (0..factor) |i| {
@@ -377,7 +454,12 @@ fn getReposByYear(
     context.result.review_contributions +=
         stats.totalPullRequestReviewContributions;
 
-    for (stats.commitContributionsByRepository) |x| {
+    inline for (.{
+        stats.commitContributionsByRepository,
+        stats.pullRequestContributionsByRepository,
+        stats.issueContributionsByRepository,
+    }) |contributions| {
+        for (contributions) |x| {
         const raw_repo = x.repository;
         if (context.seen.get(raw_repo.nameWithOwner) orelse false) {
             std.log.debug(
@@ -468,6 +550,7 @@ fn getReposByYear(
 
         try context.seen.put(raw_repo.nameWithOwner, true);
         try context.repositories.append(context.allocator, repository);
+        }
     }
 }
 

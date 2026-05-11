@@ -597,7 +597,6 @@ fn getContributedRepos(
     allocator: std.mem.Allocator,
     arena: *std.heap.ArenaAllocator,
     client: *HttpClient,
-    user: []const u8,
     seen: *std.StringHashMap(bool),
     repositories: *std.ArrayList(Repository),
 ) !void {
@@ -801,7 +800,7 @@ fn getRepos(
 
     // Also fetch all repos contributed to via repositoriesContributedTo,
     // which catches repos missed by the per-contribution-type queries
-    try getContributedRepos(allocator, arena, client, info.user, &seen, &repositories);
+    try getContributedRepos(allocator, arena, client, &seen, &repositories);
 
     result.repositories = try repositories.toOwnedSlice(allocator);
     errdefer {

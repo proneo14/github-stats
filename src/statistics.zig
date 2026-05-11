@@ -593,6 +593,150 @@ fn getReposByYear(
     }
 }
 
+fn getContributedRepos(
+    allocator: std.mem.Allocator,
+    arena: *std.heap.ArenaAllocator,
+    client: *HttpClient,
+    user: []const u8,
+    seen: *std.StringHashMap(bool),
+    repositories: *std.ArrayList(Repository),
+) !void {
+    var cursor: ?[]const u8 = null;
+    while (true) {
+        std.log.info("Getting contributed repos (cursor: {?s})...", .{cursor});
+        const response = try client.graphql(
+            \\query ($cursor: String) {
+            \\  viewer {
+            \\    repositoriesContributedTo(
+            \\      first: 100,
+            \\      after: $cursor,
+            \\      contributionTypes: [COMMIT, ISSUE, PULL_REQUEST, PULL_REQUEST_REVIEW, REPOSITORY],
+            \\      includeUserRepositories: true
+            \\    ) {
+            \\      pageInfo {
+            \\        hasNextPage
+            \\        endCursor
+            \\      }
+            \\      nodes {
+            \\        nameWithOwner
+            \\        stargazerCount
+            \\        forkCount
+            \\        isPrivate
+            \\        languages(
+            \\          first: 100,
+            \\          orderBy: { direction: DESC, field: SIZE }
+            \\        ) {
+            \\          edges {
+            \\            size
+            \\            node {
+            \\              name
+            \\              color
+            \\            }
+            \\          }
+            \\        }
+            \\      }
+            \\    }
+            \\  }
+            \\}
+        , .{ .cursor = cursor });
+        defer client.allocator.free(response.body);
+        if (response.status != .ok) {
+            std.log.err(
+                "Failed to get contributed repos ({?s})",
+                .{response.status.phrase()},
+            );
+            return;
+        }
+        const parsed = (try std.json.parseFromSliceLeaky(
+            struct { data: struct { viewer: struct {
+                repositoriesContributedTo: struct {
+                    pageInfo: struct {
+                        hasNextPage: bool,
+                        endCursor: ?[]const u8,
+                    },
+                    nodes: []struct {
+                        nameWithOwner: []const u8,
+                        stargazerCount: u32,
+                        forkCount: u32,
+                        isPrivate: bool,
+                        languages: ?struct {
+                            edges: ?[]struct {
+                                size: u32,
+                                node: struct {
+                                    name: []const u8,
+                                    color: ?[]const u8,
+                                },
+                            },
+                        },
+                    },
+                },
+            } } },
+            arena.allocator(),
+            response.body,
+            .{ .ignore_unknown_fields = true, .allocate = .alloc_always },
+        )).data.viewer.repositoriesContributedTo;
+
+        for (parsed.nodes) |raw_repo| {
+            if (seen.get(raw_repo.nameWithOwner) orelse false) {
+                continue;
+            }
+            var repository = Repository{
+                .name = try allocator.dupe(u8, raw_repo.nameWithOwner),
+                .stars = raw_repo.stargazerCount,
+                .forks = raw_repo.forkCount,
+                .private = raw_repo.isPrivate,
+                .languages = null,
+                .views = 0,
+                .lines_changed = 0,
+            };
+            errdefer repository.deinit(allocator);
+            if (raw_repo.languages) |repo_languages| {
+                if (repo_languages.edges) |raw_languages| {
+                    repository.languages = try allocator.alloc(
+                        Language,
+                        raw_languages.len,
+                    );
+                    errdefer {
+                        allocator.free(repository.languages.?);
+                        repository.languages = null;
+                    }
+                    for (
+                        raw_languages,
+                        repository.languages.?,
+                        0..,
+                    ) |raw, *language, i| {
+                        errdefer {
+                            for (0..i, repository.languages.?) |_, l| {
+                                allocator.free(l.name);
+                                if (l.color) |c| allocator.free(c);
+                            }
+                        }
+                        language.* = .{
+                            .name = try allocator.dupe(u8, raw.node.name),
+                            .size = raw.size,
+                        };
+                        errdefer allocator.free(language.name);
+                        if (raw.node.color) |color| {
+                            language.color = try allocator.dupe(u8, color);
+                        }
+                        errdefer if (language.color) |c| allocator.free(c);
+                    }
+                }
+            }
+
+            std.log.info(
+                "Discovered contributed repo: {s}",
+                .{raw_repo.nameWithOwner},
+            );
+            try seen.put(raw_repo.nameWithOwner, true);
+            try repositories.append(allocator, repository);
+        }
+
+        if (!parsed.pageInfo.hasNextPage) break;
+        cursor = parsed.pageInfo.endCursor;
+    }
+}
+
 fn getRepos(
     allocator: std.mem.Allocator,
     arena: *std.heap.ArenaAllocator,
@@ -654,6 +798,10 @@ fn getRepos(
             .repositories = &repositories,
         }, year, 0, 12);
     }
+
+    // Also fetch all repos contributed to via repositoriesContributedTo,
+    // which catches repos missed by the per-contribution-type queries
+    try getContributedRepos(allocator, arena, client, info.user, &seen, &repositories);
 
     result.repositories = try repositories.toOwnedSlice(allocator);
     errdefer {

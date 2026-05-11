@@ -1,3 +1,18 @@
+# GitHub Stats
+
+Forked from [jstrieb/github-stats](https://github.com/jstrieb/github-stats) with the following modifications:
+
+- Dark mode by default (no light/dark mode toggle)
+- Renamed "Languages Used (By File Size)" to "Most Languages Used"
+- Languages displayed in a 3-column grid layout
+- Expanded repository discovery to include repos contributed to via PRs, issues, and reviews (not just commits)
+- Increased container sizes to prevent text cutoff
+
+---
+
+<details>
+<summary>Original README</summary>
+
 # [GitHub Stats Visualization](https://github.com/jstrieb/github-stats)
 
 <!--
@@ -280,3 +295,5 @@ remain active and unchanged.
   [anuraghazra/github-readme-stats](https://github.com/anuraghazra/github-readme-stats)
 - Uses [GitHub Octicons](https://primer.style/octicons/) to precisely match the
   GitHub UI
+
+</details>

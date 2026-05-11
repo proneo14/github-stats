@@ -318,6 +318,26 @@ fn getReposByYear(
         \\          }
         \\        }
         \\      }
+        \\      pullRequestReviewContributionsByRepository(maxRepositories: 100) {
+        \\        repository {
+        \\          nameWithOwner
+        \\          stargazerCount
+        \\          forkCount
+        \\          isPrivate
+        \\          languages(
+        \\              first: 100,
+        \\              orderBy: { direction: DESC, field: SIZE }
+        \\          ) {
+        \\            edges {
+        \\              size
+        \\              node {
+        \\                name
+        \\                color
+        \\              }
+        \\            }
+        \\          }
+        \\        }
+        \\      }
         \\    }
         \\  }
         \\}
@@ -405,6 +425,23 @@ fn getReposByYear(
                         },
                     },
                 },
+                pullRequestReviewContributionsByRepository: []struct {
+                    repository: struct {
+                        nameWithOwner: []const u8,
+                        stargazerCount: u32,
+                        forkCount: u32,
+                        isPrivate: bool,
+                        languages: ?struct {
+                            edges: ?[]struct {
+                                size: u32,
+                                node: struct {
+                                    name: []const u8,
+                                    color: ?[]const u8,
+                                },
+                            },
+                        },
+                    },
+                },
             },
         } } },
         context.arena.allocator(),
@@ -424,7 +461,8 @@ fn getReposByYear(
     // warning and proceeds with processing the data.
     if (stats.commitContributionsByRepository.len >= limit or
         stats.pullRequestContributionsByRepository.len >= limit or
-        stats.issueContributionsByRepository.len >= limit)
+        stats.issueContributionsByRepository.len >= limit or
+        stats.pullRequestReviewContributionsByRepository.len >= limit)
     {
         for (&[_]usize{ 2, 3 }) |factor| {
             if (months % factor == 0) {
@@ -458,6 +496,7 @@ fn getReposByYear(
         stats.commitContributionsByRepository,
         stats.pullRequestContributionsByRepository,
         stats.issueContributionsByRepository,
+        stats.pullRequestReviewContributionsByRepository,
     }) |contributions| {
         for (contributions) |x| {
         const raw_repo = x.repository;

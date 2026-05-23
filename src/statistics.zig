@@ -864,12 +864,13 @@ fn getLinesChanged(
             });
             try io.sleep(.fromSeconds(delay), .real);
         }
-        switch (try item.repo.getLinesChanged(arena, client, self.user)) {
-            .ok => {},
+        const status = try item.repo.getLinesChanged(arena, client, self.user);
+        switch (classifyLinesChangedStatus(status)) {
+            .done => {},
             // If we're hitting rate limits on this API, just clone the repo
             // locally to compute lines changed
             // https://docs.github.com/en/rest/using-the-rest-api/troubleshooting-the-rest-api?apiVersion=2026-03-10#rate-limit-errors
-            .accepted, .forbidden, .too_many_requests => {
+            .retry => {
                 item.timestamp =
                     std.Io.Clock.real.now(io).toSeconds() + item.delay;
                 // Note: this actually works way better with a very short delay,
@@ -907,7 +908,7 @@ fn getLinesChanged(
                     try q.push(allocator, item);
                 }
             },
-            else => |status| {
+            .fail => {
                 std.log.info(
                     "Failed to get contribution data for {s} ({?s})",
                     .{ item.repo.name, status.phrase() },
@@ -920,6 +921,31 @@ fn getLinesChanged(
             },
         }
     }
+}
+
+const LinesChangedStatusAction = enum {
+    done,
+    retry,
+    fail,
+};
+
+fn classifyLinesChangedStatus(status: std.http.Status) LinesChangedStatusAction {
+    return switch (status) {
+        .ok, .no_content => .done,
+        .accepted, .forbidden, .too_many_requests => .retry,
+        else => .fail,
+    };
+}
+
+test classifyLinesChangedStatus {
+    const testing = std.testing;
+
+    try testing.expectEqual(LinesChangedStatusAction.done, classifyLinesChangedStatus(.ok));
+    try testing.expectEqual(LinesChangedStatusAction.done, classifyLinesChangedStatus(.no_content));
+    try testing.expectEqual(LinesChangedStatusAction.retry, classifyLinesChangedStatus(.accepted));
+    try testing.expectEqual(LinesChangedStatusAction.retry, classifyLinesChangedStatus(.forbidden));
+    try testing.expectEqual(LinesChangedStatusAction.retry, classifyLinesChangedStatus(.too_many_requests));
+    try testing.expectEqual(LinesChangedStatusAction.fail, classifyLinesChangedStatus(.bad_request));
 }
 
 // May not correctly free memory if there are errors during copying
